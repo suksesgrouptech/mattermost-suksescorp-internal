@@ -1,0 +1,92 @@
+name: devops-playground-chatmattermostsukses-sewtr3
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in the deployment environment}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in the deployment environment}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the deployment environment}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?Set POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mattermost:
+    image: ${MATTERMOST_IMAGE:-mattermost-custom:10.12.4}
+    build:
+      context: ..
+      dockerfile: Dockerfile.custom
+      args:
+        MATTERMOST_VERSION: "10.12.4"
+        SOURCE_REVISION: ${SOURCE_REVISION:-463e0d0d3930782d3c975da26c991dcbfccd751c}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MM_SERVICESETTINGS_SITEURL: ${MM_SERVICESETTINGS_SITEURL:?Set the Mattermost site URL}
+      MM_SQLSETTINGS_DRIVERNAME: postgres
+      MM_SQLSETTINGS_DATASOURCE: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable&connect_timeout=10"
+      MM_SERVICESETTINGS_ENABLELOCALMODE: "true"
+    ports:
+      - "8065:8065"
+    volumes:
+      - mattermost_config:/mattermost/config
+      - mattermost_data:/mattermost/data
+      - mattermost_logs:/mattermost/logs
+      - mattermost_plugins:/mattermost/plugins
+      - mattermost_client_plugins:/mattermost/client/plugins
+      - mattermost_bleve:/mattermost/bleve-indexes
+    networks:
+      - default
+      - dokploy-network
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: dokploy-network
+      traefik.http.routers.devops-playground-chatmattermostsukses-sewtr3-271-web.entrypoints: web
+      traefik.http.routers.devops-playground-chatmattermostsukses-sewtr3-271-web.middlewares: redirect-to-https@file
+      traefik.http.routers.devops-playground-chatmattermostsukses-sewtr3-271-web.rule: "Host(`chat.suksescorp.com`)"
+      traefik.http.routers.devops-playground-chatmattermostsukses-sewtr3-271-web.service: devops-playground-chatmattermostsukses-sewtr3-271-web
+      traefik.http.routers.devops-playground-chatmattermostsukses-sewtr3-271-websecure.entrypoints: websecure
+      traefik.http.routers.devops-playground-chatmattermostsukses-sewtr3-271-websecure.rule: "Host(`chat.suksescorp.com`)"
+      traefik.http.routers.devops-playground-chatmattermostsukses-sewtr3-271-websecure.service: devops-playground-chatmattermostsukses-sewtr3-271-websecure
+      traefik.http.routers.devops-playground-chatmattermostsukses-sewtr3-271-websecure.tls.certresolver: letsencrypt
+      traefik.http.services.devops-playground-chatmattermostsukses-sewtr3-271-web.loadbalancer.server.port: "8065"
+      traefik.http.services.devops-playground-chatmattermostsukses-sewtr3-271-websecure.loadbalancer.server.port: "8065"
+
+volumes:
+  postgres_data:
+    external: true
+    name: devops-playground-chatmattermostsukses-sewtr3_postgres_data
+  mattermost_config:
+    external: true
+    name: devops-playground-chatmattermostsukses-sewtr3_mattermost_config
+  mattermost_data:
+    external: true
+    name: devops-playground-chatmattermostsukses-sewtr3_mattermost_data
+  mattermost_logs:
+    external: true
+    name: devops-playground-chatmattermostsukses-sewtr3_mattermost_logs
+  mattermost_plugins:
+    external: true
+    name: devops-playground-chatmattermostsukses-sewtr3_mattermost_plugins
+  mattermost_client_plugins:
+    external: true
+    name: devops-playground-chatmattermostsukses-sewtr3_mattermost_client_plugins
+  mattermost_bleve:
+    external: true
+    name: devops-playground-chatmattermostsukses-sewtr3_mattermost_bleve
+
+networks:
+  default:
+    external: true
+    name: devops-playground-chatmattermostsukses-sewtr3_default
+  dokploy-network:
+    external: true

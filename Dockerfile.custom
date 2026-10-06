@@ -1,0 +1,128 @@
+# syntax=docker/dockerfile:1
+
+# Build the exact Mattermost source revision into the official Team Edition
+# release package, then use the upstream 10.12 runtime layout.
+FROM node:20-bookworm-slim AS node
+
+FROM golang:1.24.6-bookworm AS source-build
+COPY --from=node /usr/local/ /usr/local/
+
+RUN apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+    build-essential \
+    ca-certificates \
+    curl \
+    gnupg \
+    jq \
+    make \
+    pgloader \
+    software-properties-common \
+    tzdata \
+    xmlsec1 \
+    zip \
+  && rm -rf /var/lib/apt/lists/*
+
+ARG MATTERMOST_VERSION=10.12.4
+ARG SOURCE_REVISION=463e0d0d3930782d3c975da26c991dcbfccd751c
+ENV BUILD_NUMBER=${MATTERMOST_VERSION}
+
+WORKDIR /src
+COPY . .
+
+# scripts/test-local.ps1 verifies the checkout before invoking Docker. Pass
+# that verified SHA into the official Makefile linker metadata and image labels.
+RUN test "$(go version | awk '{print $3}')" = "go1.24.6" \
+  && node --version \
+  && npm --version
+
+# Use the repository's official build and release targets for Linux amd64.
+# GOBIN is explicit because make -C does not update Docker's PWD environment.
+RUN --mount=type=cache,target=/root/.npm \
+    npm_config_fetch_retries=5 \
+    npm_config_fetch_retry_mintimeout=20000 \
+    npm_config_fetch_retry_maxtimeout=120000 \
+    make -C server BUILD_NUMBER="${MATTERMOST_VERSION}" \
+      BUILD_HASH="${SOURCE_REVISION}" setup-go-work build-client
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    mkdir -p /src/server/bin \
+  && make -C server BUILD_NUMBER="${MATTERMOST_VERSION}" \
+      BUILD_HASH="${SOURCE_REVISION}" GOBIN=/src/server/bin build-linux-amd64
+RUN make -C server BUILD_NUMBER="${MATTERMOST_VERSION}" \
+      BUILD_HASH="${SOURCE_REVISION}" GOBIN=/src/server/bin \
+      PWD=/src/server package-linux-amd64
+
+# Runtime builder follows server/build/Dockerfile, substituting the locally
+# built package for the upstream MM_PACKAGE download.
+FROM ubuntu:noble-20250415.1@sha256:dc17125eaac86538c57da886e494a34489122fb6a3ebb6411153d742594c2ddc AS runtime-builder
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+ARG PUID=2000
+ARG PGID=2000
+
+RUN apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+    ca-certificates \
+    curl \
+    media-types \
+    mailcap \
+    unrtf \
+    wv \
+    poppler-utils \
+    tidy \
+    tzdata \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /mattermost/data /mattermost/plugins /mattermost/client/plugins /mattermost/bleve-indexes \
+  && groupadd --gid "${PGID}" mattermost \
+  && useradd --uid "${PUID}" --gid "${PGID}" --comment "" --home-dir /mattermost mattermost
+
+COPY --from=source-build /src/server/dist/mattermost-team-linux-amd64.tar.gz /tmp/mattermost.tar.gz
+RUN tar -xzf /tmp/mattermost.tar.gz -C / \
+  && rm /tmp/mattermost.tar.gz \
+  && chown -R mattermost:mattermost /mattermost /mattermost/data /mattermost/plugins /mattermost/client/plugins /mattermost/bleve-indexes
+
+RUN mkdir -p /mattermost/.postgresql \
+  && chmod 700 /mattermost/.postgresql
+
+FROM gcr.io/distroless/base-debian12
+
+ARG MATTERMOST_VERSION=10.12.4
+ARG SOURCE_REVISION=463e0d0d3930782d3c975da26c991dcbfccd751c
+
+ENV PATH="/mattermost/bin:${PATH}"
+ENV MM_SERVICESETTINGS_ENABLELOCALMODE="true"
+
+LABEL org.opencontainers.image.title="Mattermost Team Edition (custom source build)" \
+  org.opencontainers.image.version="${MATTERMOST_VERSION}" \
+  org.opencontainers.image.revision="${SOURCE_REVISION}"
+
+COPY --from=runtime-builder /etc/mime.types /etc
+COPY --from=runtime-builder --chown=2000:2000 /etc/ssl/certs /etc/ssl/certs
+
+COPY --from=runtime-builder /usr/bin/pdftotext /usr/bin/pdftotext
+COPY --from=runtime-builder /usr/bin/wvText /usr/bin/wvText
+COPY --from=runtime-builder /usr/bin/wvWare /usr/bin/wvWare
+COPY --from=runtime-builder /usr/bin/unrtf /usr/bin/unrtf
+COPY --from=runtime-builder /usr/bin/tidy /usr/bin/tidy
+COPY --from=runtime-builder /usr/share/wv /usr/share/wv
+
+COPY --from=runtime-builder /usr/lib/libpoppler.so* /usr/lib/
+COPY --from=runtime-builder /usr/lib/libfreetype.so* /usr/lib/
+COPY --from=runtime-builder /usr/lib/libpng.so* /usr/lib/
+COPY --from=runtime-builder /usr/lib/libwv.so* /usr/lib/
+COPY --from=runtime-builder /usr/lib/libtidy.so* /usr/lib/
+COPY --from=runtime-builder /usr/lib/libfontconfig.so* /usr/lib/
+
+COPY --from=runtime-builder --chown=2000:2000 /mattermost /mattermost
+COPY server/build/passwd /etc/passwd
+
+USER mattermost
+WORKDIR /mattermost
+
+HEALTHCHECK --interval=30s --timeout=10s \
+  CMD ["/mattermost/bin/mmctl", "system", "status", "--local"]
+
+CMD ["/mattermost/bin/mattermost"]
+EXPOSE 8065 8067 8074 8075
+VOLUME ["/mattermost/data", "/mattermost/logs", "/mattermost/config", "/mattermost/plugins", "/mattermost/client/plugins", "/mattermost/bleve-indexes"]

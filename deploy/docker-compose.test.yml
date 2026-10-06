@@ -1,0 +1,51 @@
+name: mattermost-10-12-4-test
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: mattermost_test
+      POSTGRES_USER: mattermost_test
+      POSTGRES_PASSWORD: local-only-not-for-production
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mattermost_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mattermost:
+    image: mattermost-custom:10.12.4-audit
+    build:
+      context: ..
+      dockerfile: Dockerfile.custom
+      args:
+        MATTERMOST_VERSION: "10.12.4"
+        SOURCE_REVISION: 463e0d0d3930782d3c975da26c991dcbfccd751c
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MM_SERVICESETTINGS_SITEURL: http://localhost:18065
+      MM_SQLSETTINGS_DRIVERNAME: postgres
+      MM_SQLSETTINGS_DATASOURCE: postgres://mattermost_test:local-only-not-for-production@postgres:5432/mattermost_test?sslmode=disable&connect_timeout=10
+      MM_SERVICESETTINGS_ENABLELOCALMODE: "true"
+    ports:
+      - "127.0.0.1:18065:8065"
+    volumes:
+      - mattermost_config:/mattermost/config
+      - mattermost_data:/mattermost/data
+      - mattermost_logs:/mattermost/logs
+      - mattermost_plugins:/mattermost/plugins
+      - mattermost_client_plugins:/mattermost/client/plugins
+      - mattermost_bleve:/mattermost/bleve-indexes
+
+volumes:
+  postgres_data: {}
+  mattermost_config: {}
+  mattermost_data: {}
+  mattermost_logs: {}
+  mattermost_plugins: {}
+  mattermost_client_plugins: {}
+  mattermost_bleve: {}

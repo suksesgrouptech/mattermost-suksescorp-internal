@@ -1,0 +1,17 @@
+# scripts/test-local.ps1 verifies the checkout before Docker builds the source.
+**/.git
+**/node_modules
+**/.env
+**/.env.*
+**/.env.*.local
+server/bin
+server/dist
+server/tmpprepackaged
+webapp/channels/dist
+webapp/playbooks/dist
+webapp/boards/dist
+webapp/platform/*/dist
+webapp/platform/*/lib
+e2e-tests
+api
+tools
