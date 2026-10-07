@@ -1,29 +1,13 @@
-# CUTOVER ONLY: this Compose project and its external volumes/networks are the
-# existing production deployment. DO NOT run `docker compose up/down` casually.
-# Running this file attaches the replacement service to production data. Use
-# deploy/docker-compose.test.yml for local validation.
-name: devops-playground-chatmattermostsukses-sewtr3
+# PARALLEL/CUTOVER CANDIDATE ONLY.
+# This starts another Mattermost process against the production database and
+# shared writable Mattermost volumes. Do not run it while the existing
+# Mattermost service is active without a reviewed multi-node/maintenance plan.
+# It does not deploy or replace anything automatically; it has no Traefik route.
+name: devops-playground-chatmattermostsukses-sewtr3-custom
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in the deployment environment}
-      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in the deployment environment}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the deployment environment}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - default
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?Set POSTGRES_USER}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   mattermost:
-    image: ${MATTERMOST_IMAGE:-mattermost-custom:10.12.4}
+    image: mattermost-custom:10.12.4-cutover
     platform: linux/amd64
     build:
       context: ..
@@ -33,16 +17,13 @@ services:
         SOURCE_REVISION: 463e0d0d3930782d3c975da26c991dcbfccd751c
         BUILD_DATE: 2025-11-21T13:22:45Z
     restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
     environment:
-      MM_SERVICESETTINGS_SITEURL: ${MM_SERVICESETTINGS_SITEURL:?Set the Mattermost site URL}
+      MM_SERVICESETTINGS_SITEURL: ${MM_SERVICESETTINGS_SITEURL:?Set the existing Mattermost site URL}
       MM_SQLSETTINGS_DRIVERNAME: postgres
-      MM_SQLSETTINGS_DATASOURCE: "${MM_SQLSETTINGS_DATASOURCE:?Set the full PostgreSQL DSN with a URL-encoded password}"
+      MM_SQLSETTINGS_DATASOURCE: "${MM_SQLSETTINGS_DATASOURCE:?Set the existing PostgreSQL DSN for host postgres and database mattermost}"
       MM_SERVICESETTINGS_ENABLELOCALMODE: "true"
     ports:
-      - "8065:8065"
+      - "8066:8065"
     volumes:
       - mattermost_config:/mattermost/config
       - mattermost_data:/mattermost/data
@@ -51,26 +32,9 @@ services:
       - mattermost_client_plugins:/mattermost/client/plugins
       - mattermost_bleve:/mattermost/bleve-indexes
     networks:
-      - default
-      - dokploy-network
-    labels:
-      traefik.enable: "true"
-      traefik.docker.network: dokploy-network
-      traefik.http.routers.devops-playground-chatmattermostsukses-sewtr3-271-web.entrypoints: web
-      traefik.http.routers.devops-playground-chatmattermostsukses-sewtr3-271-web.middlewares: redirect-to-https@file
-      traefik.http.routers.devops-playground-chatmattermostsukses-sewtr3-271-web.rule: "Host(`chat.suksescorp.com`)"
-      traefik.http.routers.devops-playground-chatmattermostsukses-sewtr3-271-web.service: devops-playground-chatmattermostsukses-sewtr3-271-web
-      traefik.http.routers.devops-playground-chatmattermostsukses-sewtr3-271-websecure.entrypoints: websecure
-      traefik.http.routers.devops-playground-chatmattermostsukses-sewtr3-271-websecure.rule: "Host(`chat.suksescorp.com`)"
-      traefik.http.routers.devops-playground-chatmattermostsukses-sewtr3-271-websecure.service: devops-playground-chatmattermostsukses-sewtr3-271-websecure
-      traefik.http.routers.devops-playground-chatmattermostsukses-sewtr3-271-websecure.tls.certresolver: letsencrypt
-      traefik.http.services.devops-playground-chatmattermostsukses-sewtr3-271-web.loadbalancer.server.port: "8065"
-      traefik.http.services.devops-playground-chatmattermostsukses-sewtr3-271-websecure.loadbalancer.server.port: "8065"
+      - production
 
 volumes:
-  postgres_data:
-    external: true
-    name: devops-playground-chatmattermostsukses-sewtr3_postgres_data
   mattermost_config:
     external: true
     name: devops-playground-chatmattermostsukses-sewtr3_mattermost_config
@@ -91,8 +55,6 @@ volumes:
     name: devops-playground-chatmattermostsukses-sewtr3_mattermost_bleve
 
 networks:
-  default:
+  production:
     external: true
     name: devops-playground-chatmattermostsukses-sewtr3_default
-  dokploy-network:
-    external: true

@@ -54,15 +54,14 @@ docker build --platform linux/amd64 `
 
 The official package target cleans and recreates `server/dist`; it runs inside the temporary build stage, not in the working tree. The same verification is applied by `scripts/test-local.ps1` before Compose builds.
 
-## Future deployment template
+## Parallel/cutover candidate Compose
 
-`deploy/docker-compose.yml` is a future production cutover template only. **Do not run `docker compose up`, `down`, or other lifecycle commands with it casually:** it deliberately uses the existing production project, network, and external volumes. It expects `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `MM_SQLSETTINGS_DATASOURCE`, and `MM_SERVICESETTINGS_SITEURL` from the future deployment environment. `MM_SQLSETTINGS_DATASOURCE` must be a complete PostgreSQL URL whose password component is URL-encoded; keep `POSTGRES_PASSWORD` raw for PostgreSQL initialization. Do not commit a populated `.env` file.
+`deploy/docker-compose.yml` builds `mattermost-custom:10.12.4-cutover` from `Dockerfile.custom`. It defines no PostgreSQL service and mounts no PostgreSQL data volume. It connects to the existing `postgres` host and `mattermost` database through the existing Docker network. Set `MM_SQLSETTINGS_DATASOURCE` to the existing full PostgreSQL DSN, with the password URL-encoded and host/database exactly `postgres`/`mattermost`; set `MM_SERVICESETTINGS_SITEURL` to the existing site URL. Do not commit populated secrets.
 
-The template declares production volumes as external so Compose will not create empty, similarly named volumes. These exact names came from the read-only production audit:
+The Compose project has a distinct name to avoid production container-name collisions. It publishes host port `8066` to container port `8065`, has no Traefik labels or production domain route, and declares the six Mattermost production volumes as external so Compose cannot create similarly named empty volumes:
 
 | Production volume | Container path |
 |---|---|
-| `devops-playground-chatmattermostsukses-sewtr3_postgres_data` | `/var/lib/postgresql/data` |
 | `devops-playground-chatmattermostsukses-sewtr3_mattermost_config` | `/mattermost/config` |
 | `devops-playground-chatmattermostsukses-sewtr3_mattermost_data` | `/mattermost/data` |
 | `devops-playground-chatmattermostsukses-sewtr3_mattermost_logs` | `/mattermost/logs` |
@@ -70,4 +69,6 @@ The template declares production volumes as external so Compose will not create 
 | `devops-playground-chatmattermostsukses-sewtr3_mattermost_client_plugins` | `/mattermost/client/plugins` |
 | `devops-playground-chatmattermostsukses-sewtr3_mattermost_bleve` | `/mattermost/bleve-indexes` |
 
-The local test Compose file does not reference these external names, the production network, or production credentials. Keep the deployment template unused until the migration is separately reviewed and authorized.
+**Do not start this Compose stack while the existing Mattermost is active.** Although port 8066 allows HTTP access without replacing the existing listener, both Mattermost processes would use the same production database and shared writable config/data/log/plugin/search volumes. This can cause database migrations or background jobs to overlap, config/plugin changes to be observed by the live service, and file/index state to be modified concurrently. A safe parallel run needs a separately reviewed Mattermost multi-node plan or isolated copies of production data; the latter is not configured here. The file is scaffolding only and was not deployed.
+
+The local test Compose file does not reference these external names, the production network, or production credentials.
