@@ -56,7 +56,7 @@ The official package target cleans and recreates `server/dist`; it runs inside t
 
 ## Parallel/cutover candidate Compose
 
-`deploy/docker-compose.yml` builds `mattermost-custom:10.12.4-cutover` from `Dockerfile.custom`. It defines no PostgreSQL service and mounts no PostgreSQL data volume. It connects to the existing `postgres` host and `mattermost` database through the existing Docker network. Set `MM_SQLSETTINGS_DATASOURCE` to the existing full PostgreSQL DSN, with the password URL-encoded and host/database exactly `postgres`/`mattermost`; set `MM_SERVICESETTINGS_SITEURL` to the existing site URL. Do not commit populated secrets.
+`docker-compose.yml` builds `mattermost-custom:10.12.4-cutover` from `Dockerfile.custom`. It defines no PostgreSQL service and mounts no PostgreSQL data volume. It connects to the existing `postgres` host and `mattermost` database through the existing Docker network. Set `MM_SQLSETTINGS_DATASOURCE` to the existing full PostgreSQL DSN, with the password URL-encoded and host/database exactly `postgres`/`mattermost`; set `MM_SERVICESETTINGS_SITEURL` to the existing site URL. Do not commit populated secrets.
 
 The Compose project has a distinct name to avoid production container-name collisions. It publishes host port `8066` to container port `8065`, has no Traefik labels or production domain route, and declares the six Mattermost production volumes as external so Compose cannot create similarly named empty volumes:
 

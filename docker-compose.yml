@@ -10,7 +10,7 @@ services:
     image: mattermost-custom:10.12.4-cutover
     platform: linux/amd64
     build:
-      context: ..
+      context: .
       dockerfile: Dockerfile.custom
       args:
         MATTERMOST_VERSION: "10.12.4"
