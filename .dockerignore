@@ -15,3 +15,7 @@ webapp/platform/*/lib
 e2e-tests
 api
 tools
+Dockerfile.custom
+deploy
+docs
+scripts

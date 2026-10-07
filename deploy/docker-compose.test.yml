@@ -17,12 +17,14 @@ services:
 
   mattermost:
     image: mattermost-custom:10.12.4-audit
+    platform: linux/amd64
     build:
       context: ..
       dockerfile: Dockerfile.custom
       args:
         MATTERMOST_VERSION: "10.12.4"
         SOURCE_REVISION: 463e0d0d3930782d3c975da26c991dcbfccd751c
+        BUILD_DATE: 2025-11-21T13:22:45Z
     depends_on:
       postgres:
         condition: service_healthy
@@ -31,6 +33,7 @@ services:
       MM_SQLSETTINGS_DRIVERNAME: postgres
       MM_SQLSETTINGS_DATASOURCE: postgres://mattermost_test:local-only-not-for-production@postgres:5432/mattermost_test?sslmode=disable&connect_timeout=10
       MM_SERVICESETTINGS_ENABLELOCALMODE: "true"
+      MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS: "true"
     ports:
       - "127.0.0.1:18065:8065"
     volumes:

@@ -1,3 +1,7 @@
+# CUTOVER ONLY: this Compose project and its external volumes/networks are the
+# existing production deployment. DO NOT run `docker compose up/down` casually.
+# Running this file attaches the replacement service to production data. Use
+# deploy/docker-compose.test.yml for local validation.
 name: devops-playground-chatmattermostsukses-sewtr3
 
 services:
@@ -20,12 +24,14 @@ services:
 
   mattermost:
     image: ${MATTERMOST_IMAGE:-mattermost-custom:10.12.4}
+    platform: linux/amd64
     build:
       context: ..
       dockerfile: Dockerfile.custom
       args:
         MATTERMOST_VERSION: "10.12.4"
-        SOURCE_REVISION: ${SOURCE_REVISION:-463e0d0d3930782d3c975da26c991dcbfccd751c}
+        SOURCE_REVISION: 463e0d0d3930782d3c975da26c991dcbfccd751c
+        BUILD_DATE: 2025-11-21T13:22:45Z
     restart: unless-stopped
     depends_on:
       postgres:
@@ -33,7 +39,7 @@ services:
     environment:
       MM_SERVICESETTINGS_SITEURL: ${MM_SERVICESETTINGS_SITEURL:?Set the Mattermost site URL}
       MM_SQLSETTINGS_DRIVERNAME: postgres
-      MM_SQLSETTINGS_DATASOURCE: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable&connect_timeout=10"
+      MM_SQLSETTINGS_DATASOURCE: "${MM_SQLSETTINGS_DATASOURCE:?Set the full PostgreSQL DSN with a URL-encoded password}"
       MM_SERVICESETTINGS_ENABLELOCALMODE: "true"
     ports:
       - "8065:8065"

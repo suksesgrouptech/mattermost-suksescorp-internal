@@ -1,10 +1,10 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
 # Build the exact Mattermost source revision into the official Team Edition
 # release package, then use the upstream 10.12 runtime layout.
-FROM node:20-bookworm-slim AS node
+FROM --platform=linux/amd64 node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS node
 
-FROM golang:1.24.6-bookworm AS source-build
+FROM --platform=linux/amd64 golang:1.24.6-bookworm@sha256:ab1d1823abb55a9504d2e3e003b75b36dbeb1cbcc4c92593d85a84ee46becc6c AS source-build
 COPY --from=node /usr/local/ /usr/local/
 
 RUN apt-get update \
@@ -24,6 +24,7 @@ RUN apt-get update \
 
 ARG MATTERMOST_VERSION=10.12.4
 ARG SOURCE_REVISION=463e0d0d3930782d3c975da26c991dcbfccd751c
+ARG BUILD_DATE=2025-11-21T13:22:45Z
 ENV BUILD_NUMBER=${MATTERMOST_VERSION}
 
 WORKDIR /src
@@ -32,6 +33,8 @@ COPY . .
 # scripts/test-local.ps1 verifies the checkout before invoking Docker. Pass
 # that verified SHA into the official Makefile linker metadata and image labels.
 RUN test "$(go version | awk '{print $3}')" = "go1.24.6" \
+  && test "${MATTERMOST_VERSION}" = "10.12.4" \
+  && test "${SOURCE_REVISION}" = "463e0d0d3930782d3c975da26c991dcbfccd751c" \
   && node --version \
   && npm --version
 
@@ -42,19 +45,22 @@ RUN --mount=type=cache,target=/root/.npm \
     npm_config_fetch_retry_mintimeout=20000 \
     npm_config_fetch_retry_maxtimeout=120000 \
     make -C server BUILD_NUMBER="${MATTERMOST_VERSION}" \
-      BUILD_HASH="${SOURCE_REVISION}" setup-go-work build-client
+      BUILD_HASH="${SOURCE_REVISION}" BUILD_DATE="${BUILD_DATE}" \
+      MMCTL_BUILD_DATE="${BUILD_DATE}" setup-go-work build-client
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     mkdir -p /src/server/bin \
   && make -C server BUILD_NUMBER="${MATTERMOST_VERSION}" \
-      BUILD_HASH="${SOURCE_REVISION}" GOBIN=/src/server/bin build-linux-amd64
+      BUILD_HASH="${SOURCE_REVISION}" BUILD_DATE="${BUILD_DATE}" \
+      MMCTL_BUILD_DATE="${BUILD_DATE}" GOBIN=/src/server/bin build-linux-amd64
 RUN make -C server BUILD_NUMBER="${MATTERMOST_VERSION}" \
-      BUILD_HASH="${SOURCE_REVISION}" GOBIN=/src/server/bin \
+      BUILD_HASH="${SOURCE_REVISION}" BUILD_DATE="${BUILD_DATE}" \
+      MMCTL_BUILD_DATE="${BUILD_DATE}" GOBIN=/src/server/bin \
       PWD=/src/server package-linux-amd64
 
 # Runtime builder follows server/build/Dockerfile, substituting the locally
 # built package for the upstream MM_PACKAGE download.
-FROM ubuntu:noble-20250415.1@sha256:dc17125eaac86538c57da886e494a34489122fb6a3ebb6411153d742594c2ddc AS runtime-builder
+FROM --platform=linux/amd64 ubuntu:noble-20250415.1@sha256:dc17125eaac86538c57da886e494a34489122fb6a3ebb6411153d742594c2ddc AS runtime-builder
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG PUID=2000
@@ -85,7 +91,7 @@ RUN tar -xzf /tmp/mattermost.tar.gz -C / \
 RUN mkdir -p /mattermost/.postgresql \
   && chmod 700 /mattermost/.postgresql
 
-FROM gcr.io/distroless/base-debian12
+FROM --platform=linux/amd64 gcr.io/distroless/base-debian12@sha256:fabbf1c0c357a3d42550111351daed089b20a2c954df13ee2fcff60602515e84
 
 ARG MATTERMOST_VERSION=10.12.4
 ARG SOURCE_REVISION=463e0d0d3930782d3c975da26c991dcbfccd751c
